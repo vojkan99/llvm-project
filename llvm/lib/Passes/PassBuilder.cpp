@@ -219,6 +219,7 @@
 #include "llvm/Transforms/Utils/BreakCriticalEdges.h"
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
 #include "llvm/Transforms/Utils/CanonicalizeFreezeInLoops.h"
+#include "llvm/Transforms/Utils/DbgDeclareValue.h"
 #include "llvm/Transforms/Utils/Debugify.h"
 #include "llvm/Transforms/Utils/EntryExitInstrumenter.h"
 #include "llvm/Transforms/Utils/FixIrreducible.h"
@@ -1622,6 +1623,7 @@ Error PassBuilder::parsePassPipeline(ModulePassManager &MPM,
 
       // Unknown pass or pipeline name!
       auto &InnerPipeline = Pipeline->front().InnerPipeline;
+      
       return make_error<StringError>(
           formatv("unknown {0} name '{1}'",
                   (InnerPipeline.empty() ? "pass" : "pipeline"), FirstName)

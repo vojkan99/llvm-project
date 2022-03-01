@@ -17,6 +17,7 @@ add_llvm_component_library(LLVMTransformUtils
   CodeLayout.cpp
   CodeMoverUtils.cpp
   CtorUtils.cpp
+  DbgDeclareValue.cpp
   Debugify.cpp
   DemoteRegToStack.cpp
   EntryExitInstrumenter.cpp

@@ -118,6 +118,7 @@
 #include "llvm/Transforms/Utils/AssumeBundleBuilder.h"
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
 #include "llvm/Transforms/Utils/InjectTLIMappings.h"
+#include "llvm/Transforms/Utils/DbgDeclareValue.h"
 #include "llvm/Transforms/Utils/LibCallsShrinkWrap.h"
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Utils/NameAnonGlobals.h"
@@ -921,6 +922,9 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   // Remove any dead arguments exposed by cleanups and constant folding
   // globals.
   MPM.addPass(DeadArgumentEliminationPass());
+  
+  // dodato za DbgDeclareValue prolaz
+  MPM.addPass(createModuleToFunctionPassAdaptor(DbgDeclareValue()));
 
   // Create a small function pass pipeline to cleanup after all the global
   // optimizations.
