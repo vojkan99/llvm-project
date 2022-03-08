@@ -5,7 +5,7 @@
 #include "llvm/Pass.h"
 
 namespace llvm {
-void traverseDbg(Function &F);
+bool traverseDbg(Function &F);
 } // namespace llvm
 
 struct DbgDeclareValue : public llvm::PassInfoMixin<DbgDeclareValue> {

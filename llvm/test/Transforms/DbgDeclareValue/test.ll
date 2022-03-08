@@ -1,7 +1,5 @@
-; RUN: opt -disable-output -dbg-declare-value -S < %s | FileCheck %s
-
-; CHECK: Function foo has 0 llvm.dbg.declare calls and 2 llvm.dbg.value calls!
-; CHECK: Function main has 2 llvm.dbg.declare calls and 0 llvm.dbg.value calls!
+; RUN: opt -dbg-declare-value -S < %s | FileCheck %s
+; RUN: opt -passes=dbg-declare-value -S < %s | FileCheck %s
  
 ; ModuleID = 'test_extended.c'
 source_filename = "test_extended.c"
@@ -10,6 +8,11 @@ target triple = "x86_64-unknown-linux-gnu"
 
 ; Function Attrs: nounwind uwtable
 define dso_local void @foo(i32 noundef %y) local_unnamed_addr #0 !dbg !7 {
+  ; CHECK: entry
+  ; CHECK-NOT: call void @llvm.dbg.value
+  ; CHECK-NOT: call void @llvm.dbg.value
+  ; CHECK-NEXT: ret void
+  
 entry:
   call void @llvm.dbg.value(metadata i32 %y, metadata !12, metadata !DIExpression()), !dbg !18
   call void @llvm.dbg.value(metadata i32 %y, metadata !13, metadata !DIExpression()), !dbg !18
@@ -36,6 +39,14 @@ entry:
   %y = alloca i32, align 4
   store i32 0, i32* %retval, align 4
   %0 = bitcast i32* %x to i8*, !dbg !36
+  
+  ; CHECK: call void @llvm.lifetime.start.p0i8(i64 4, i8* %0) #3
+  ; CHECK-NOT: call void @llvm.dbg.declare
+  ; CHECK-NEXT: store i32 0, i32* %x, align 4
+  ; CHECK: call void @llvm.lifetime.start.p0i8(i64 4, i8* %1) #3
+  ; CHECK-NOT: call void @llvm.dbg.declare
+  ; CHECK-NEXT: store i32 1, i32* %y, align 4
+  
   call void @llvm.lifetime.start.p0i8(i64 4, i8* %0) #3, !dbg !36
   call void @llvm.dbg.declare(metadata i32* %x, metadata !34, metadata !DIExpression()), !dbg !37
   store i32 0, i32* %x, align 4, !dbg !37, !tbaa !14

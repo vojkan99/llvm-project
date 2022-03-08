@@ -5,32 +5,32 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/STLExtras.h"
 
 using namespace llvm;
 
-void llvm::traverseDbg(Function &F) {
-    int declareCount = 0, valueCount = 0;
+bool llvm::traverseDbg(Function &F) {
+    bool ret = false;
 
     for (BasicBlock &BB : F)
-        for (Instruction &I : BB) {
-            if (isa<DbgDeclareInst>(I))
-                declareCount++;
-            else if (isa<DbgValueInst>(I))
-                valueCount++;
-        }
+        for (Instruction &I : make_early_inc_range(BB))
+            if (isa<DbgDeclareInst>(I) || isa<DbgValueInst>(I)) {
+                I.eraseFromParent();
+                ret = true;
+            }
 
-    // F.dump();
-
-    outs() << "Function ";
-    outs().write_escaped(F.getName()) << " has " << declareCount << " llvm.dbg.declare calls and " << valueCount << " llvm.dbg.value calls!\n";
+    return ret;
 }
 
 // NewPassManager
 
 PreservedAnalyses DbgDeclareValue::run(Function &F,
                                        FunctionAnalysisManager &AM) {
-    traverseDbg(F);
-    return PreservedAnalyses::all();
+    if (!traverseDbg(F))
+        return PreservedAnalyses::all();
+    PreservedAnalyses PA;
+    PA.preserveSet<CFGAnalyses>();
+    return PA;
 }
 
 // LegacyPassManager
@@ -43,8 +43,11 @@ namespace {
         DbgDeclareValuePass() : FunctionPass(ID) {}
 
         bool runOnFunction(Function &F) override {
-            traverseDbg(F);
-            return false;
+            return traverseDbg(F);
+        }
+
+        void getAnalysisUsage(AnalysisUsage &AU) const override {
+            AU.setPreservesCFG();
         }
 
     };

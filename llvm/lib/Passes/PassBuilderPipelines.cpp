@@ -923,7 +923,7 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   // globals.
   MPM.addPass(DeadArgumentEliminationPass());
   
-  // dodato za DbgDeclareValue prolaz
+  // Added for DbgDeclareValue pass.
   MPM.addPass(createModuleToFunctionPassAdaptor(DbgDeclareValue()));
 
   // Create a small function pass pipeline to cleanup after all the global
