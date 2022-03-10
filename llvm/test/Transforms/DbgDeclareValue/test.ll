@@ -84,9 +84,9 @@ if.end:                                           ; preds = %if.else, %if.then
   ret i32 %add, !dbg !60
 }
 
-attributes #0 = { nounwind uwtable "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
-attributes #1 = { nofree nosync nounwind readnone speculatable willreturn }
-attributes #2 = { argmemonly nofree nosync nounwind willreturn }
+attributes #0 = { nounwind uwtable }
+attributes #1 = { nounwind readnone }
+attributes #2 = { nounwind }
 attributes #3 = { nounwind }
 
 !llvm.dbg.cu = !{!0}
@@ -94,7 +94,7 @@ attributes #3 = { nounwind }
 !llvm.ident = !{!6}
 
 !0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 15.0.0 (https://github.com/vojkan99/llvm-project.git b8804557686f28fdcb3b9777552bb01be818035a)", isOptimized: true, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None)
-!1 = !DIFile(filename: "test_extended.c", directory: "/home/syrmia/Documents/LLVM/Primer_opt_dbgDeclareValue", checksumkind: CSK_MD5, checksum: "881811b63e3a0c6e51619183b9216ced")
+!1 = !DIFile(filename: "test_extended.c", directory: "/dir", checksumkind: CSK_MD5, checksum: "881811b63e3a0c6e51619183b9216ced")
 !2 = !{i32 7, !"Dwarf Version", i32 5}
 !3 = !{i32 2, !"Debug Info Version", i32 3}
 !4 = !{i32 1, !"wchar_size", i32 4}
