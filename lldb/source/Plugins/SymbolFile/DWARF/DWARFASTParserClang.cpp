@@ -2347,6 +2347,20 @@ DWARFASTParserClang::ParseFunctionFromDWARF(CompileUnit &comp_unit,
   if (tag != DW_TAG_subprogram)
     return nullptr;
 
+  // Check whether a function is outlined and if yes, set the appropriate flag.
+  bool is_outlined = false;
+
+  DWARFAttributes attributes;
+  const size_t num_child_attributes = die.GetAttributes(attributes);
+
+  for (uint32_t i = 0; i < num_child_attributes; ++i) {
+    const dw_attr_t attr = attributes.AttributeAtIndex(i);
+    if (attr == DW_AT_LLVM_outlined) {
+      is_outlined = true;
+      break;
+    }
+  }
+
   if (die.GetDIENamesAndRanges(name, mangled, func_ranges, decl_file, decl_line,
                                decl_column, call_file, call_line, call_column,
                                &frame_base)) {
@@ -2412,7 +2426,8 @@ DWARFASTParserClang::ParseFunctionFromDWARF(CompileUnit &comp_unit,
         std::make_shared<Function>(&comp_unit,
                                    func_user_id, // UserID is the DIE offset
                                    func_user_id, func_name, func_type,
-                                   func_range); // first address range
+                                   func_range, // first address range
+                                   is_outlined);
 
     if (func_sp.get() != nullptr) {
       if (frame_base.IsValid())

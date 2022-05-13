@@ -1895,6 +1895,12 @@ bool StackFrame::GetStatus(Stream &strm, bool show_frame_info, bool show_source,
                   source_lines_before, source_lines_after, "->", &strm);
           if (num_lines != 0)
             have_source = true;
+
+          if (m_sc.function && m_sc.function->IsOutlined()) {
+            strm.Printf("Note: this function is outlined.");
+            strm.EOL();
+          }
+
           // TODO: Give here a one time warning if source file is missing.
           if (!m_sc.line_entry.line) {
             ConstString fn_name = m_sc.GetFunctionName();

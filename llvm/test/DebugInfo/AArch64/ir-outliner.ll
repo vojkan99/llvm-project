@@ -24,7 +24,7 @@
 ; CHECK-NEXT: DW_AT_frame_base  (DW_OP_reg31 WSP)
 ; CHECK-NEXT: DW_AT_linkage_name ("[[NAME:outlined_ir_func_[0-9]+]]")
 ; CHECK-NEXT: DW_AT_name  ("[[NAME]]")
-; CHECK-NEXT: DW_AT_artificial  (true)
+; CHECK-NEXT: DW_AT_LLVM_outlined  (true)
 ; CHECK-NEXT: DW_AT_external  (true)
 
 define void @outline_debug1() !dbg !6 {

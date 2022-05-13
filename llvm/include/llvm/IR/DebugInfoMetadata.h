@@ -1931,6 +1931,7 @@ public:
   bool isOptimized() const { return getSPFlags() & SPFlagOptimized; }
   bool isMainSubprogram() const { return getSPFlags() & SPFlagMainSubprogram; }
 
+  bool isOutlined() const { return getFlags() & FlagOutlined; }
   bool isArtificial() const { return getFlags() & FlagArtificial; }
   bool isPrivate() const {
     return (getFlags() & FlagAccessibility) == FlagPrivate;

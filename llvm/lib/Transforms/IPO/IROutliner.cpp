@@ -624,7 +624,7 @@ Function *IROutliner::createFunction(Module &M, OutlinableGroup &Group,
         0 /* Line 0 is reserved for compiler-generated code. */,
         DB.createSubroutineType(DB.getOrCreateTypeArray(None)), /* void type */
         0, /* Line 0 is reserved for compiler-generated code. */
-        DINode::DIFlags::FlagArtificial /* Compiler-generated code. */,
+        DINode::DIFlags::FlagOutlined /* Compiler-generated outlined code. */,
         /* Outlined code is optimized code by definition. */
         DISubprogram::SPFlagDefinition | DISubprogram::SPFlagOptimized);
 

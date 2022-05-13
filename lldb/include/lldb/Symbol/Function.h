@@ -438,7 +438,7 @@ public:
   ///     The section offset based address for this function.
   Function(CompileUnit *comp_unit, lldb::user_id_t func_uid,
            lldb::user_id_t func_type_uid, const Mangled &mangled,
-           Type *func_type, const AddressRange &range);
+           Type *func_type, const AddressRange &range, bool outlined = false);
 
   /// Destructor.
   ~Function() override;
@@ -567,6 +567,8 @@ public:
   ///     The size of the prologue.
   uint32_t GetPrologueByteSize();
 
+  bool IsOutlined() const { return m_outlined; }
+
   /// Dump a description of this object to a Stream.
   ///
   /// Dump a description of the contents of this object to the supplied stream
@@ -675,6 +677,9 @@ protected:
 
   /// Outgoing call edges.
   std::vector<std::unique_ptr<CallEdge>> m_call_edges;
+
+  /// Whether function has been outlined or not.
+  bool m_outlined = false;
 
 private:
   Function(const Function &) = delete;
