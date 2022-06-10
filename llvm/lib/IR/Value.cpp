@@ -495,18 +495,21 @@ static bool contains(Value *Expr, Value *V) {
 }
 #endif // NDEBUG
 
-void Value::doRAUW(Value *New, ReplaceMetadataUses ReplaceMetaUses) {
+void Value::doRAUW(Value *New, ReplaceMetadataUses ReplaceMetaUses, bool DiffType) {
   assert(New && "Value::replaceAllUsesWith(<null>) is invalid!");
   assert(!contains(New, this) &&
          "this->replaceAllUsesWith(expr(this)) is NOT valid!");
-  assert(New->getType() == getType() &&
-         "replaceAllUses of value with new value of different type!");
-
+  if (!DiffType)
+    assert(New->getType() == getType() &&
+           "replaceAllUses of value with new value of different type!");
+  else
+    assert(New->getType() != getType() &&
+           "replaceAllUses of value with new value which is not of different type!");
   // Notify all ValueHandles (if present) that this value is going away.
   if (HasValueHandle)
-    ValueHandleBase::ValueIsRAUWd(this, New);
+    ValueHandleBase::ValueIsRAUWd(this, New, DiffType);
   if (ReplaceMetaUses == ReplaceMetadataUses::Yes && isUsedByMetadata())
-    ValueAsMetadata::handleRAUW(this, New);
+    ValueAsMetadata::handleRAUW(this, New, DiffType);
 
   while (!materialized_use_empty()) {
     Use &U = *UseList;
@@ -514,7 +517,7 @@ void Value::doRAUW(Value *New, ReplaceMetadataUses ReplaceMetaUses) {
     // constant because they are uniqued.
     if (auto *C = dyn_cast<Constant>(U.getUser())) {
       if (!isa<GlobalValue>(C)) {
-        C->handleOperandChange(this, New);
+        C->handleOperandChange(this, New, DiffType);
         continue;
       }
     }
@@ -526,12 +529,12 @@ void Value::doRAUW(Value *New, ReplaceMetadataUses ReplaceMetaUses) {
     BB->replaceSuccessorsPhiUsesWith(cast<BasicBlock>(New));
 }
 
-void Value::replaceAllUsesWith(Value *New) {
-  doRAUW(New, ReplaceMetadataUses::Yes);
+void Value::replaceAllUsesWith(Value *New, bool DiffType) {
+  doRAUW(New, ReplaceMetadataUses::Yes, DiffType);
 }
 
-void Value::replaceNonMetadataUsesWith(Value *New) {
-  doRAUW(New, ReplaceMetadataUses::No);
+void Value::replaceNonMetadataUsesWith(Value *New, bool DiffType) {
+  doRAUW(New, ReplaceMetadataUses::No, DiffType);
 }
 
 void Value::replaceUsesWithIf(Value *New,
@@ -1185,11 +1188,15 @@ void ValueHandleBase::ValueIsDeleted(Value *V) {
   }
 }
 
-void ValueHandleBase::ValueIsRAUWd(Value *Old, Value *New) {
+void ValueHandleBase::ValueIsRAUWd(Value *Old, Value *New, bool DiffType) {
   assert(Old->HasValueHandle &&"Should only be called if ValueHandles present");
   assert(Old != New && "Changing value into itself!");
-  assert(Old->getType() == New->getType() &&
-         "replaceAllUses of value with new value of different type!");
+  if (!DiffType)
+    assert(Old->getType() == New->getType() &&
+	   "replaceAllUses of value with new value of different type!");
+  else
+    assert(Old->getType() != New->getType() &&
+	   "replaceAllUses of value with new value which is not of different type!");
 
   // Get the linked list base, which is guaranteed to exist since the
   // HasValueHandle flag is set.

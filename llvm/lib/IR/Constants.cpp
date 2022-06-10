@@ -1517,7 +1517,7 @@ Constant *ConstantExpr::getShuffleMaskForBitcode() const {
 }
 
 Constant *ConstantExpr::getWithOperands(ArrayRef<Constant *> Ops, Type *Ty,
-                                        bool OnlyIfReduced, Type *SrcTy) const {
+                                        bool OnlyIfReduced, Type *SrcTy, bool DiffType) const {
   assert(Ops.size() == getNumOperands() && "Operand count mismatch!");
 
   // If no operands changed return self.
@@ -1559,10 +1559,11 @@ Constant *ConstantExpr::getWithOperands(ArrayRef<Constant *> Ops, Type *Ty,
                                           OnlyIfReducedTy);
   case Instruction::GetElementPtr: {
     auto *GEPO = cast<GEPOperator>(this);
-    assert(SrcTy || (Ops[0]->getType() == getOperand(0)->getType()));
+    if (!DiffType)
+      assert(SrcTy || (Ops[0]->getType() == getOperand(0)->getType()));
     return ConstantExpr::getGetElementPtr(
         SrcTy ? SrcTy : GEPO->getSourceElementType(), Ops[0], Ops.slice(1),
-        GEPO->isInBounds(), GEPO->getInRangeIndex(), OnlyIfReducedTy);
+        GEPO->isInBounds(), GEPO->getInRangeIndex(), OnlyIfReducedTy, DiffType);
   }
   case Instruction::ICmp:
   case Instruction::FCmp:
@@ -1850,7 +1851,7 @@ void BlockAddress::destroyConstantImpl() {
   getBasicBlock()->AdjustBlockAddressRefCount(-1);
 }
 
-Value *BlockAddress::handleOperandChangeImpl(Value *From, Value *To) {
+Value *BlockAddress::handleOperandChangeImpl(Value *From, Value *To, bool DiffType) {
   // This could be replacing either the Basic Block or the Function.  In either
   // case, we have to remove the map entry.
   Function *NewF = getFunction();
@@ -1907,7 +1908,7 @@ void DSOLocalEquivalent::destroyConstantImpl() {
   GV->getContext().pImpl->DSOLocalEquivalents.erase(GV);
 }
 
-Value *DSOLocalEquivalent::handleOperandChangeImpl(Value *From, Value *To) {
+Value *DSOLocalEquivalent::handleOperandChangeImpl(Value *From, Value *To, bool DiffType) {
   assert(From == getGlobalValue() && "Changing value does not match operand.");
   assert(isa<Constant>(To) && "Can only replace the operands with a constant");
 
@@ -1965,7 +1966,7 @@ void NoCFIValue::destroyConstantImpl() {
   GV->getContext().pImpl->NoCFIValues.erase(GV);
 }
 
-Value *NoCFIValue::handleOperandChangeImpl(Value *From, Value *To) {
+Value *NoCFIValue::handleOperandChangeImpl(Value *From, Value *To, bool DiffType) {
   assert(From == getGlobalValue() && "Changing value does not match operand.");
 
   GlobalValue *GV = dyn_cast<GlobalValue>(To->stripPointerCasts());
@@ -2460,10 +2461,11 @@ Constant *ConstantExpr::getSelect(Constant *C, Constant *V1, Constant *V2,
 Constant *ConstantExpr::getGetElementPtr(Type *Ty, Constant *C,
                                          ArrayRef<Value *> Idxs, bool InBounds,
                                          Optional<unsigned> InRangeIndex,
-                                         Type *OnlyIfReducedTy) {
+                                         Type *OnlyIfReducedTy, bool DiffType) {
   PointerType *OrigPtrTy = cast<PointerType>(C->getType()->getScalarType());
   assert(Ty && "Must specify element type");
-  assert(OrigPtrTy->isOpaqueOrPointeeTypeMatches(Ty));
+  if (!DiffType)
+    assert(OrigPtrTy->isOpaqueOrPointeeTypeMatches(Ty));
 
   if (Constant *FC =
           ConstantFoldGetElementPtr(Ty, C, InBounds, InRangeIndex, Idxs))
@@ -2487,6 +2489,16 @@ Constant *ConstantExpr::getGetElementPtr(Type *Ty, Constant *C,
 
   if (EltCount.isNonZero())
     ReqTy = VectorType::get(ReqTy, EltCount);
+
+  //std::string type_str1;
+  //llvm::raw_string_ostream rso1(type_str1);
+  //ReqTy->print(rso1);
+  //errs() << rso1.str() << '\n';
+
+  //errs() << "Dump begin\n\n";
+  //for (auto& elem : C->getContext().pImpl->ExprConstants)
+    //elem->dump();
+  //errs() << "\nDump end\n";
 
   if (OnlyIfReducedTy == ReqTy)
     return nullptr;
@@ -2924,6 +2936,10 @@ Type *GetElementPtrConstantExpr::getResultElementType() const {
   return ResElementTy;
 }
 
+//void GetElementPtrConstantExpr::setSourceElementType(Type* T) {
+//  SrcElementTy = T;
+//}
+
 //===----------------------------------------------------------------------===//
 //                       ConstantData* implementations
 
@@ -3359,14 +3375,14 @@ Constant *ConstantDataVector::getSplatValue() const {
 /// work, but would be really slow because it would have to unique each updated
 /// array instance.
 ///
-void Constant::handleOperandChange(Value *From, Value *To) {
+void Constant::handleOperandChange(Value *From, Value *To, bool DiffType) {
   Value *Replacement = nullptr;
   switch (getValueID()) {
   default:
     llvm_unreachable("Not a constant!");
-#define HANDLE_CONSTANT(Name)                                                  \
-  case Value::Name##Val:                                                       \
-    Replacement = cast<Name>(this)->handleOperandChangeImpl(From, To);         \
+#define HANDLE_CONSTANT(Name)                                                    \
+  case Value::Name##Val:                                                         \
+    Replacement = cast<Name>(this)->handleOperandChangeImpl(From, To, DiffType); \
     break;
 #include "llvm/IR/Value.def"
   }
@@ -3386,7 +3402,7 @@ void Constant::handleOperandChange(Value *From, Value *To) {
   destroyConstant();
 }
 
-Value *ConstantArray::handleOperandChangeImpl(Value *From, Value *To) {
+Value *ConstantArray::handleOperandChangeImpl(Value *From, Value *To, bool DiffType) {
   assert(isa<Constant>(To) && "Cannot make Constant refer to non-constant!");
   Constant *ToC = cast<Constant>(To);
 
@@ -3427,7 +3443,7 @@ Value *ConstantArray::handleOperandChangeImpl(Value *From, Value *To) {
       Values, this, From, ToC, NumUpdated, OperandNo);
 }
 
-Value *ConstantStruct::handleOperandChangeImpl(Value *From, Value *To) {
+Value *ConstantStruct::handleOperandChangeImpl(Value *From, Value *To, bool DiffType) {
   assert(isa<Constant>(To) && "Cannot make Constant refer to non-constant!");
   Constant *ToC = cast<Constant>(To);
 
@@ -3463,7 +3479,7 @@ Value *ConstantStruct::handleOperandChangeImpl(Value *From, Value *To) {
       Values, this, From, ToC, NumUpdated, OperandNo);
 }
 
-Value *ConstantVector::handleOperandChangeImpl(Value *From, Value *To) {
+Value *ConstantVector::handleOperandChangeImpl(Value *From, Value *To, bool DiffType) {
   assert(isa<Constant>(To) && "Cannot make Constant refer to non-constant!");
   Constant *ToC = cast<Constant>(To);
 
@@ -3489,7 +3505,7 @@ Value *ConstantVector::handleOperandChangeImpl(Value *From, Value *To) {
       Values, this, From, ToC, NumUpdated, OperandNo);
 }
 
-Value *ConstantExpr::handleOperandChangeImpl(Value *From, Value *ToV) {
+Value *ConstantExpr::handleOperandChangeImpl(Value *From, Value *ToV, bool DiffType) {
   assert(isa<Constant>(ToV) && "Cannot make Constant refer to non-constant!");
   Constant *To = cast<Constant>(ToV);
 
@@ -3507,7 +3523,7 @@ Value *ConstantExpr::handleOperandChangeImpl(Value *From, Value *ToV) {
   }
   assert(NumUpdated && "I didn't contain From!");
 
-  if (Constant *C = getWithOperands(NewOps, getType(), true))
+  if (Constant *C = getWithOperands(NewOps, getType(), true, nullptr, DiffType))
     return C;
 
   // Update to the new value.

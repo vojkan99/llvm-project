@@ -390,7 +390,7 @@ public:
   }
 
   static void handleDeletion(Value *V);
-  static void handleRAUW(Value *From, Value *To);
+  static void handleRAUW(Value *From, Value *To, bool DiffType = false);
 
 protected:
   /// Handle collisions after \a Value::replaceAllUsesWith().
@@ -1004,6 +1004,8 @@ public:
   bool isUniqued() const { return Storage == Uniqued; }
   bool isDistinct() const { return Storage == Distinct; }
   bool isTemporary() const { return Storage == Temporary; }
+
+  void setDistinct() { Storage = Distinct; }
 
   /// RAUW a temporary.
   ///

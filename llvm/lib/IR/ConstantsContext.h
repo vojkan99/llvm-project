@@ -14,6 +14,7 @@
 #ifndef LLVM_LIB_IR_CONSTANTSCONTEXT_H
 #define LLVM_LIB_IR_CONSTANTSCONTEXT_H
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/DenseSet.h"
@@ -27,6 +28,7 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/OperandTraits.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -35,6 +37,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <unordered_set>
 #include <utility>
 
 #define DEBUG_TYPE "ir"
@@ -292,6 +295,8 @@ public:
   Type *getSourceElementType() const;
   Type *getResultElementType() const;
 
+  //void setSourceElementType(Type *T);
+
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
@@ -310,7 +315,7 @@ class CompareConstantExpr final : public ConstantExpr {
 public:
   unsigned short predicate;
   CompareConstantExpr(Type *ty, Instruction::OtherOps opc,
-                      unsigned short pred,  Constant* LHS, Constant* RHS)
+                      unsigned short pred,  Constant *LHS, Constant *RHS)
     : ConstantExpr(ty, opc, &Op<0>(), 2), predicate(pred) {
     Op<0>() = LHS;
     Op<1>() = RHS;
@@ -692,9 +697,11 @@ private:
 
 public:
   using MapTy = DenseSet<ConstantClass *, MapInfo>;
+  using InvalidGEPCESetTy = std::unordered_set<Constant *>;
 
 private:
   MapTy Map;
+  InvalidGEPCESetTy InvalidGEPCEs;
 
 public:
   typename MapTy::iterator begin() { return Map.begin(); }
@@ -703,6 +710,119 @@ public:
   void freeConstants() {
     for (auto &I : Map)
       deleteConstant(I);
+  }
+
+  MapTy getMap() const { return Map; }
+
+  // Remove old invalid GEPCEs created by the function
+  // updateGEPCEWithNewSourceTypeAndIndice.
+  void removeOldGEPCEs(Module &M,
+                       std::unordered_set<Constant *> InvalidConstExprs) {
+    for (auto &I : make_early_inc_range(Map))
+      if (InvalidConstExprs.count(I)) {
+        InvalidGEPCEs.insert(I);
+        typename MapTy::iterator Iter = Map.find(I);
+        Map.erase(Iter);
+      }
+
+    // errs() << "Globals start\n";
+    // for (auto &I : make_early_inc_range(M.globals()))
+    //   I.dump();
+    // errs() << "Globals end\n";
+
+    // for (auto &I : make_early_inc_range(M.globals()))
+    //   if (auto *GEPCE = dyn_cast<Constant>(&I)) {
+    //     errs() << "Casted\n";
+    //     GEPCE->dump();
+    //     if (InvalidConstExprs.count(GEPCE))
+    //       M.getGlobalList().erase(I);
+    //   }
+  }
+
+  GetElementPtrConstantExpr *updateGEPCEWithNewSourceTypeAndIndice(
+      ConstantExpr *GEPCE, StructType *NewStruct, std::vector<unsigned> Indices,
+      std::unordered_set<Constant *> &InvalidConstExprs) {
+    assert(isa<GetElementPtrConstantExpr>(GEPCE) &&
+           "Parameter must be of type GetElementPtrConstantExpr!");
+
+    for (auto &I : make_early_inc_range(Map))
+      if (I == GEPCE) {
+        // // errs() << "Here\n";
+        // if (isa<GetElementPtrConstantExpr>(I))
+        //   errs() << "Yes\n";
+        // GEPCE->dump();
+        std::vector<Constant *> Ops(GEPCE->getNumOperands() - 1);
+
+        Use *OperandList = GEPCE->getOperandList();
+        // OperandList[1].get()->dump();
+        if (auto *C = dyn_cast<Constant>(OperandList[0].get())) {
+          for (unsigned i = 0, e = GEPCE->getNumOperands() - 1; i != e; ++i) {
+            Ops[i] = cast<Constant>(OperandList[i + 1].get());
+            if (i == 1)
+              if (auto *NewIndex = dyn_cast<ConstantInt>(Ops[i])) {
+                unsigned NumOfInvalidIndices = 0;
+                for (unsigned j = 0; j != NewIndex->getZExtValue(); ++j)
+                  if (Indices[j] == 0)
+                    NumOfInvalidIndices++;
+
+                errs() << "Old Index: " << NewIndex->getZExtValue() << '\n'
+                       << "New Index: "
+                       << NewIndex->getZExtValue() - NumOfInvalidIndices
+                       << '\n';
+                // New index is the result of a subtraction between the old
+                // index and NumOfInvalidIndices. That is the number of the
+                // unused fields with indexes between 0 and old index in the old
+                // struct.
+                APInt AP(NewIndex->getBitWidth(),
+                         NewIndex->getZExtValue() - NumOfInvalidIndices);
+                Ops[i] = Constant::getIntegerValue(NewIndex->getType(), AP);
+              }
+          }
+
+          GetElementPtrConstantExpr *NewGEPCE =
+              GetElementPtrConstantExpr::Create(
+                  NewStruct, C, Ops, GEPCE->getType(),
+                  GEPCE->getRawSubclassOptionalData());
+
+          // errs() << "Here1\n";
+          // NewGEPCE->dump();
+          // errs() << "Here2\n";
+
+          if (Map.count(NewGEPCE) == 0)
+            Map.insert(NewGEPCE);
+
+          // Do not delete old GEPCE yet, because there may be other
+          // instructions which are its users. Call removeOldGEPCEs after this
+          // method to actually remove these values.
+          InvalidConstExprs.insert(I);
+
+          // typename MapTy::iterator Iter = Map.find(I);
+          // Map.erase(Iter);
+
+          return NewGEPCE;
+        } else
+          return nullptr;
+
+        // Use* OperandList = GEPCE->getOperandList();
+        // Constant *C = cast<Constant>(OperandList[0].get());
+        // for (unsigned i = 0, E = GEPCE->getNumOperands() - 1; i != E; ++i)
+        //   Ops[i] = cast<Constant>(OperandList[i + 1].get());
+
+        // GetElementPtrConstantExpr* NewGEPCE =
+        //     GetElementPtrConstantExpr::Create(NewStruct, C,
+        //         Ops, GEPCE->getType(),
+        //         GEPCE->getRawSubclassOptionalData());
+
+        // Map.insert(NewGEPCE);
+
+        // typename MapTy::iterator Iter = Map.find(I);
+        // Map.erase(Iter);
+
+        // auto *CastI = cast<GetElementPtrConstantExpr>(I);
+        // CastI->setSourceElementType(NewStruct);
+      }
+
+    return nullptr;
   }
 
 private:
@@ -736,6 +856,22 @@ public:
 
   /// Remove this constant from the map
   void remove(ConstantClass *CP) {
+    // errs() << "Dump begin\n\n";
+    // errs() << Map.size() << '\n';
+    // for (auto& elem : Map)
+    // if (elem == CP)
+    // errs() << "Yes\n";
+    // elem->dump();
+    // errs() << "\nDump end\n";
+    // If GEPCE is invalid, it will not be in Map.
+    if (auto *GEPCE = dyn_cast<GetElementPtrConstantExpr>(CP)) {
+      if (InvalidGEPCEs.count(GEPCE) == 0)
+        doRemoval(CP);
+    } else
+      doRemoval(CP);
+  }
+
+  void doRemoval(ConstantClass *CP) {
     typename MapTy::iterator I = Map.find(CP);
     assert(I != Map.end() && "Constant not found in constant table!");
     assert(*I == CP && "Didn't find correct element?");
