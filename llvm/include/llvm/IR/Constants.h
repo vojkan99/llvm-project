@@ -50,7 +50,7 @@ template <class ConstantClass> struct ConstantAggrKeyType;
 class ConstantData : public Constant {
   friend class Constant;
 
-  Value *handleOperandChangeImpl(Value *From, Value *To) {
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false) {
     llvm_unreachable("Constant data does not have operands!");
   }
 
@@ -412,7 +412,7 @@ class ConstantArray final : public ConstantAggregate {
   ConstantArray(ArrayType *T, ArrayRef<Constant *> Val);
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 public:
   // ConstantArray accessors
@@ -444,7 +444,7 @@ class ConstantStruct final : public ConstantAggregate {
   ConstantStruct(StructType *T, ArrayRef<Constant *> Val);
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 public:
   // ConstantStruct accessors
@@ -496,7 +496,7 @@ class ConstantVector final : public ConstantAggregate {
   ConstantVector(VectorType *T, ArrayRef<Constant *> Val);
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 public:
   // ConstantVector accessors
@@ -879,7 +879,7 @@ class BlockAddress final : public Constant {
   void *operator new(size_t S) { return User::operator new(S, 2); }
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 public:
   void operator delete(void *Ptr) { User::operator delete(Ptr); }
@@ -925,7 +925,7 @@ class DSOLocalEquivalent final : public Constant {
   void *operator new(size_t S) { return User::operator new(S, 1); }
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 public:
   void operator delete(void *Ptr) { User::operator delete(Ptr); }
@@ -962,7 +962,7 @@ class NoCFIValue final : public Constant {
   void *operator new(size_t S) { return User::operator new(S, 1); }
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 public:
   /// Return a NoCFIValue for the specified function.
@@ -999,7 +999,7 @@ class ConstantExpr : public Constant {
   friend class Constant;
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
 protected:
   ConstantExpr(Type *ty, unsigned Opcode, Use *Ops, unsigned NumOps)
@@ -1227,26 +1227,28 @@ public:
   getGetElementPtr(Type *Ty, Constant *C, ArrayRef<Constant *> IdxList,
                    bool InBounds = false,
                    std::optional<unsigned> InRangeIndex = std::nullopt,
-                   Type *OnlyIfReducedTy = nullptr) {
+                   Type *OnlyIfReducedTy = nullptr,
+		   bool DiffType = false) {
     return getGetElementPtr(
         Ty, C, ArrayRef((Value *const *)IdxList.data(), IdxList.size()),
-        InBounds, InRangeIndex, OnlyIfReducedTy);
+        InBounds, InRangeIndex, OnlyIfReducedTy, DiffType);
   }
   static Constant *
   getGetElementPtr(Type *Ty, Constant *C, Constant *Idx, bool InBounds = false,
                    std::optional<unsigned> InRangeIndex = std::nullopt,
-                   Type *OnlyIfReducedTy = nullptr) {
+                   Type *OnlyIfReducedTy = nullptr,
+		   bool DiffType = false) {
     // This form of the function only exists to avoid ambiguous overload
     // warnings about whether to convert Idx to ArrayRef<Constant *> or
     // ArrayRef<Value *>.
     return getGetElementPtr(Ty, C, cast<Value>(Idx), InBounds, InRangeIndex,
-                            OnlyIfReducedTy);
+			    OnlyIfReducedTy, DiffType);
   }
   static Constant *
   getGetElementPtr(Type *Ty, Constant *C, ArrayRef<Value *> IdxList,
                    bool InBounds = false,
                    std::optional<unsigned> InRangeIndex = std::nullopt,
-                   Type *OnlyIfReducedTy = nullptr);
+		   Type *OnlyIfReducedTy = nullptr, bool DiffType = false);
 
   /// Create an "inbounds" getelementptr. See the documentation for the
   /// "inbounds" flag in LangRef.html for details.
@@ -1312,7 +1314,7 @@ public:
   /// canonicalized.  This parameter should almost always be \c false.
   Constant *getWithOperands(ArrayRef<Constant *> Ops, Type *Ty,
                             bool OnlyIfReduced = false,
-                            Type *SrcTy = nullptr) const;
+                            Type *SrcTy = nullptr, bool DiffType = false) const;
 
   /// Returns an Instruction which implements the same operation as this
   /// ConstantExpr. If \p InsertBefore is not null, the new instruction is

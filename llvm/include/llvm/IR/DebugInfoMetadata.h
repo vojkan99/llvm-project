@@ -700,6 +700,10 @@ class DIType : public DIScope {
   uint64_t SizeInBits;
   uint64_t OffsetInBits;
   uint32_t AlignInBits;
+  /// These fields are used exclusively for struct types which are created in
+  /// UnusedStructureFieldsEliminationPass.
+  uint64_t NewSizeInBits;
+  uint64_t NewOffsetInBits;
 
 protected:
   DIType(LLVMContext &C, unsigned ID, StorageType Storage, unsigned Tag,
@@ -717,6 +721,8 @@ protected:
     this->SizeInBits = SizeInBits;
     this->AlignInBits = AlignInBits;
     this->OffsetInBits = OffsetInBits;
+    this->NewSizeInBits = 0;
+    this->NewOffsetInBits = 0;
   }
 
   /// Change fields in place.
@@ -738,6 +744,11 @@ public:
   uint32_t getAlignInBytes() const { return getAlignInBits() / CHAR_BIT; }
   uint64_t getOffsetInBits() const { return OffsetInBits; }
   DIFlags getFlags() const { return Flags; }
+  uint64_t getNewSizeInBits() const { return NewSizeInBits; }
+  uint64_t getNewOffsetInBits() const { return NewOffsetInBits; }
+
+  void setNewSizeInBits(uint64_t NewSizeInBits) { this->NewSizeInBits = NewSizeInBits; }
+  void setNewOffsetInBits(uint64_t NewOffsetInBits) { this->NewOffsetInBits = NewOffsetInBits; }
 
   DIScope *getScope() const { return cast_or_null<DIScope>(getRawScope()); }
   StringRef getName() const { return getStringOperand(2); }
@@ -964,6 +975,8 @@ class DIDerivedType : public DIType {
   friend class LLVMContextImpl;
   friend class MDNode;
 
+  bool IsOptimizedOut;
+
   /// The DWARF address space of the memory pointed to or referenced by a
   /// pointer or reference type respectively.
   std::optional<unsigned> DWARFAddressSpace;
@@ -975,7 +988,9 @@ class DIDerivedType : public DIType {
                 ArrayRef<Metadata *> Ops)
       : DIType(C, DIDerivedTypeKind, Storage, Tag, Line, SizeInBits,
                AlignInBits, OffsetInBits, Flags, Ops),
-        DWARFAddressSpace(DWARFAddressSpace) {}
+        DWARFAddressSpace(DWARFAddressSpace) {
+    this->IsOptimizedOut = false;
+  }
   ~DIDerivedType() = default;
   static DIDerivedType *
   getImpl(LLVMContext &Context, unsigned Tag, StringRef Name, DIFile *File,
@@ -1024,6 +1039,9 @@ public:
                     (Tag, Name, File, Line, Scope, BaseType, SizeInBits,
                      AlignInBits, OffsetInBits, DWARFAddressSpace, Flags,
                      ExtraData, Annotations))
+
+  bool isOptimizedOut() const { return IsOptimizedOut; }
+  void setOptimizedOut(bool IsOptimizedOut) { this->IsOptimizedOut = IsOptimizedOut; }
 
   TempDIDerivedType clone() const { return cloneImpl(); }
 

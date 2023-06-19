@@ -125,7 +125,7 @@ private:
   friend class Constant;
 
   void destroyConstantImpl();
-  Value *handleOperandChangeImpl(Value *From, Value *To);
+  Value *handleOperandChangeImpl(Value *From, Value *To, bool DiffType = false);
 
   /// Returns true if the definition of this global may be replaced by a
   /// differently optimized variant of the same source level function at link

@@ -2036,6 +2036,8 @@ static void writeDIDerivedType(raw_ostream &Out, const DIDerivedType *N,
   Printer.printInt("size", N->getSizeInBits());
   Printer.printInt("align", N->getAlignInBits());
   Printer.printInt("offset", N->getOffsetInBits());
+  Printer.printBool("isOptimizedOut", N->isOptimizedOut());
+  Printer.printInt("newOffset", N->getNewOffsetInBits());
   Printer.printDIFlags("flags", N->getFlags());
   Printer.printMetadata("extraData", N->getRawExtraData());
   if (const auto &DWARFAddressSpace = N->getDWARFAddressSpace())
@@ -2056,6 +2058,7 @@ static void writeDICompositeType(raw_ostream &Out, const DICompositeType *N,
   Printer.printInt("line", N->getLine());
   Printer.printMetadata("baseType", N->getRawBaseType());
   Printer.printInt("size", N->getSizeInBits());
+  Printer.printInt("newSize", N->getNewSizeInBits());
   Printer.printInt("align", N->getAlignInBits());
   Printer.printInt("offset", N->getOffsetInBits());
   Printer.printDIFlags("flags", N->getFlags());
