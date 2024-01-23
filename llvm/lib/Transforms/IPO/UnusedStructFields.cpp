@@ -44,7 +44,6 @@ GlobalVariable *createNewGlobalVar(Module &M, const GlobalVariable &Var,
   NewGlobalVar->setExternallyInitialized(Var.isExternallyInitialized());
   NewGlobalVar->setAttributes(Var.getAttributes());
   NewGlobalVar->setSection(Var.getSection());
-  NewGlobalVar->setAlignment(DL.getPrefTypeAlign(NewStruct));
   NewGlobalVar->setComdat(const_cast<Comdat *>(Var.getComdat()));
   // NewGlobalVar->setGlobalValueSubClassData(Var.getGlobalValueSubClassData());
   // // protected pa ne moze samo ovako, mogla bi friend klasa da se stavi
@@ -54,6 +53,8 @@ GlobalVariable *createNewGlobalVar(Module &M, const GlobalVariable &Var,
   Var.getDebugInfo(GVEs);
   for (unsigned i = 0, e = GVEs.size(); i != e; ++i)
     NewGlobalVar->addDebugInfo(GVEs[i]);
+
+  NewGlobalVar->setAlignment(DL.getPrefTypeAlign(NewStruct));
 
   return NewGlobalVar;
 }
@@ -125,8 +126,7 @@ std::string getGVTypeName(Module &M, StringRef GVName) {
   for (const auto &GV : M.globals())
     if (isa<GlobalVariable>(GV) &&
         GV.getName().str().compare(GVName.str()) == 0)
-      if (auto *ST = dyn_cast<StructType>(
-              GV.getValueType())) {
+      if (auto *ST = dyn_cast<StructType>(GV.getValueType())) {
         // GV.dump();
         // errs() << "Type " << ST->getName().str() << '\n';
         // errs() << "Struct name: " << ST->getName().str() << '\n';
@@ -285,47 +285,54 @@ bool createNewCompositeType(
   //     V->getType()->replaceOperandWith(3, NewStructType);
   //   else if (State == 2)
   //     V->replaceOperandWith(3, NewStructType);
+
   DINodeArray Elements = DINodeArray();
   std::string StructName = "";
   DICompositeType *CT = nullptr;
   unsigned State = 0;
   if (isa<DIDerivedType>(V->getType()) &&
       V->getType()->getTag() == dwarf::DW_TAG_typedef) {
-    if ((CT = dyn_cast<DICompositeType>(
-             (dyn_cast<DIDerivedType>(V->getType()))->getBaseType()))) {
-      StructName = CT->getName().str();
+    if (auto *DT = dyn_cast<DIDerivedType>(V->getType()))
+      if ((CT = dyn_cast<DICompositeType>(DT->getBaseType()))) {
+        //StructName = CT->getName().str();
+        StructName = DT->getName().str();
 
-      // If the composite type does not have a name, get the name of
-      // the struct from GlobalVariable instead of DIGlobalVariable.
-      // If there is a typedef attached to this composite type, its
-      // name will be the name of the struct, otherwise anon is used.
-      if (StructName.length() == 0) {
-        if (VarScope)
-          StructName = getGVTypeName(M, V->getName());
-        // NOTE: If V is a DILocalVariable*, the corresponding local variable is
-        // used to create a global variable with prefix __const.function_name.
-        // so that local and global variables can be used uniformly.
-        else
-          StructName = getGVTypeName(M, "__const." + FuncName + "." +
-                                            V->getName().str());
+        //// If the derived type does not have a name, get the name of
+        //// the struct from GlobalVariable instead of DIGlobalVariable.
+        //// If there is a typedef attached to this composite type, its
+        //// name will be the name of the struct, otherwise anon is used.
+        /*if (StructName.length() == 0) {
+          if (VarScope)
+            StructName = getGVTypeName(M, V->getName());
+          // NOTE: If V is a DILocalVariable  *, following situations
+          // are possible. The corresponding local variable is used
+          // to create a global variable with prefix
+          // __const.function_name. so that local and global variables
+          // can be used uniformly. Alternatively, the
+          else
+            StructName = getGVTypeName(M, "__const." + FuncName + "." +
+                                              V->getName().str());
+        }*/
+
+        Elements = CT->getElements();
+        State = 1;
       }
-
-      Elements = CT->getElements();
-      State = 1;
-    }
   } else if ((CT = dyn_cast<DICompositeType>(V->getType()))) {
     StructName = CT->getName().str();
 
     // If the composite type does not have a name, get the name of the
-    // struct from GlobalVariable instead of DIGlobalVariable. If
-    // there is a typedef attached to this composite type, its name
-    // will be the name of the struct, otherwise anon is used.
+    // struct from GlobalVariable instead of DIGlobalVariable or
+    // DILocalVariable.
     if (StructName.length() == 0) {
       if (VarScope)
         StructName = getGVTypeName(M, V->getName());
       // NOTE: If V is a DILocalVariable *, the corresponding local variable is
-      // used to create a global variable with prefix __const.function_name.
+      // used to create a global variable with prefix "__const.function_name."
       // so that local and global variables can be used uniformly.
+      // TODO: In case that there is not a name in DICompositeType and somehow
+      // the global variable with said prefix is not created, see how else to
+      // extract the name of the struct type, if necessary. This situation may
+      // not even be possible to occur.
       else
         StructName =
             getGVTypeName(M, "__const." + FuncName + "." + V->getName().str());
@@ -339,7 +346,8 @@ bool createNewCompositeType(
   // updated with new struct type, but with struct name thas has a sufix _1, as
   // the old type is not yet replaced in full by a new type. This is known
   // because this function is, in this case, called when finding alloca
-  // instructions in run method.
+  // instructions in run method or when going through the retained nodes of
+  // DISubprogram metadata nodes.
   // If StructName has length 0, there is no corresponding global variable to
   // this local variable which means that it is initialized from a copy of an
   // existing local or global variable. Therefore, the struct type of that
@@ -361,6 +369,13 @@ bool createNewCompositeType(
     errs() << StructName << '\n';
     auto E = FieldUsage.find("struct." + StructName);
     if (E == FieldUsage.end())
+      // NOTE: This case can happen if, for example, there are some structs
+      // identical in number and types of fields. LLVM keeps only one of
+      // those types and puts that type to be the type of all variables
+      // which originally had either one of old types. However, the types
+      // in the debug info section for those DIVariable nodes are not
+      // updated, but instead have the old types' names. This case is
+      // ignored in this optimization.
       return false;
     // continue;
 
@@ -429,6 +444,10 @@ bool createNewCompositeType(
     if (MaxAlignInBits > 0 && (NewSizeInBits % MaxAlignInBits != 0))
       NewSizeInBits = findFirstLarger(NewSizeInBits, MaxAlignInBits);
 
+    // errs() << "Here start\n";
+    // M.getContext().dump();
+    // CT->getScope()->dump();
+    // errs() << "Here end\n";
     DICompositeType *NewStructType = DB.createStructType(
         CT->getScope(), CT->getName(), CT->getFile(), CT->getLine(),
         CT->getSizeInBits(), CT->getAlignInBits(),
@@ -472,7 +491,20 @@ bool createNewCompositeType(
       V->replaceOperandWith(3, NewStructType);
 
     return true;
-  } else return false;
+  } else
+    return false;
+}
+
+void changeDebugInfoForNewStructsLocalVars(
+    Module &M, Function &F, DILocalVariable *LocalVar, DIBuilder &DB,
+    std::unordered_map<std::string, std::vector<unsigned>> &FieldUsage,
+    std::unordered_set<DIType *> IsDbgInfoAlreadyUpdated) {
+  if (IsDbgInfoAlreadyUpdated.count(LocalVar->getType()) == 0) {
+    bool Updated = createNewCompositeType(DB, M, LocalVar, F.getName().str(),
+                                          FieldUsage, false);
+    if (Updated)
+      IsDbgInfoAlreadyUpdated.insert(LocalVar->getType());
+  }
 }
 
 // Alter debug info nodes to reflect the lack of usage of certain fields in
@@ -493,7 +525,8 @@ void changeDebugInfoForNewStructs(
           // V->dump();
           // errs() << "Here\n";
           if (V && AlreadyUpdated.count(V->getType()) == 0) {
-            bool Updated = createNewCompositeType(DB, M, V, "", FieldUsage, true);
+            bool Updated =
+                createNewCompositeType(DB, M, V, "", FieldUsage, true);
             if (Updated)
               AlreadyUpdated.insert(V->getType());
           }
@@ -720,8 +753,7 @@ void fixArgumentAttributes(Function *OldFunc, Function *NewFunc,
     // attribute (byval, preallocated, inalloca, byref, sret) which
     // has a type argument, which is that structure type.
     if (A.hasPointeeInMemoryValueAttr()) {
-      AttributeSet ParamAttrs =
-          OldFunc->getAttributes().getParamAttrs(ArgNo);
+      AttributeSet ParamAttrs = OldFunc->getAttributes().getParamAttrs(ArgNo);
       AttrBuilder B(OldFunc->getContext(), ParamAttrs);
       // if (ParamAttrs.hasAttribute(Attribute::ByVal)) {
       //   ParamAttrs = ParamAttrs.removeAttribute(A.getContext(),
@@ -812,8 +844,7 @@ void fixCallBasesIfNecessary(Function *F, std::string StructName) {
       for (unsigned ArgNo = 0; ArgNo < F->getFunctionType()->getNumParams();
            ++ArgNo) {
         if (F->getArg(ArgNo)->hasPointeeInMemoryValueAttr()) {
-          AttributeSet ParamAttrs =
-              CB->getAttributes().getParamAttrs(ArgNo);
+          AttributeSet ParamAttrs = CB->getAttributes().getParamAttrs(ArgNo);
           AttrBuilder B(F->getContext(), ParamAttrs);
 
           if (auto *OldST = dyn_cast_or_null<StructType>(B.getByValType()))
@@ -821,7 +852,8 @@ void fixCallBasesIfNecessary(Function *F, std::string StructName) {
               B.addByValAttr(F->getParamByValType(ArgNo));
               AttrChange = true;
             }
-          if (auto *OldST = dyn_cast_or_null<StructType>(B.getPreallocatedType()))
+          if (auto *OldST =
+                  dyn_cast_or_null<StructType>(B.getPreallocatedType()))
             if (OldST->getName().compare(StructName) == 0) {
               B.addPreallocatedAttr(F->getParamPreallocatedType(ArgNo));
               AttrChange = true;
@@ -860,7 +892,7 @@ void fixCallBasesIfNecessary(Function *F, std::string StructName) {
 
 // Returns true if V is either a GlobalVariable or an AllocaInst and
 // its pointee type has the name StructName + "_1", otherwise false.
-bool isGlobVarOrAllocaInstWithSameType(Value *V, std::string StructName) {
+bool isGlobVarOrArgOrAllocaInstWithSameType(Value *V, std::string StructName) {
   if (auto *GV = dyn_cast<GlobalVariable>(V)) {
     if (auto *ST = dyn_cast<StructType>(GV->getValueType()))
       if (ST->getName().str().compare(StructName + "_1") == 0)
@@ -868,6 +900,25 @@ bool isGlobVarOrAllocaInstWithSameType(Value *V, std::string StructName) {
   } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
     if (auto *ST = dyn_cast<StructType>(AI->getAllocatedType()))
       if (ST->getName().str().compare(StructName + "_1") == 0)
+        return true;
+  } else if (auto *A = dyn_cast<Argument>(V)) {
+    AttributeSet ParamAttrs =
+        A->getParent()->getAttributes().getParamAttrs(A->getArgNo());
+    AttrBuilder B(A->getParent()->getContext(), ParamAttrs);
+    if (auto *ST = dyn_cast_or_null<StructType>(B.getByValType()))
+      if (ST->getName().compare(StructName + "_1") == 0)
+        return true;
+    if (auto *ST = dyn_cast_or_null<StructType>(B.getPreallocatedType()))
+      if (ST->getName().compare(StructName + "_1") == 0)
+        return true;
+    if (auto *ST = dyn_cast_or_null<StructType>(B.getInAllocaType()))
+      if (ST->getName().compare(StructName + "_1") == 0)
+        return true;
+    if (auto *ST = dyn_cast_or_null<StructType>(B.getByRefType()))
+      if (ST->getName().compare(StructName + "_1") == 0)
+        return true;
+    if (auto *ST = dyn_cast_or_null<StructType>(B.getStructRetType()))
+      if (ST->getName().compare(StructName + "_1") == 0)
         return true;
   }
 
@@ -900,9 +951,9 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
-        // Go through the usage of struct fields in global struct variables.
         if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
           Value *PointerOp = getLoadStorePointerOperand(&I);
+          // Go through the usage of struct fields in global struct variables.
           if (auto *GEPCE = dyn_cast<GetElementPtrConstantExpr>(PointerOp)) {
             // GEPCE->dump();
 
@@ -911,26 +962,66 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
             // GEPCE->getOperand(1)->dump();
             // GEPCE->getOperand(2)->dump();
 
-            if (auto *GEPType = dyn_cast<StructType>(
-                    GEPCE->getOperand(0)
-                        ->getType()
-                        ->getNonOpaquePointerElementType()))
+            if (auto *GEPType =
+                    dyn_cast<StructType>(GEPCE->getSourceElementType()))
               if (FieldUsage.count(GEPType->getName().str()) == 1) {
                 auto *ConstValue = dyn_cast<ConstantInt>(GEPCE->getOperand(2));
                 FieldUsage[GEPType->getName().str()]
                           [ConstValue->getZExtValue()]++;
               }
-
-            // errs() << '\n';
           }
+          // When the first field (index 0) of the struct is accessed (through a
+          // global variable), pointer to that variable is just used, instead of
+          // adding a GetElementPtrConstantExpr with the index 0, since it also
+          // points to the same spot in memory as the result of
+          // GetElementPtrConstantExpr would.
+          else if (auto *GV = dyn_cast<GlobalVariable>(PointerOp)) {
+            if (auto *GVType = dyn_cast<StructType>(GV->getValueType()))
+              if (FieldUsage.count(GVType->getName().str()) == 1)
+                FieldUsage[GVType->getName().str()][0]++;
+          }
+          // Go through the usage of the first struct field (index 0) in
+          // local struct variables. With higher optimization levels, GEP
+          // instruction can be removed when accessing the first field of
+          // the struct, so the argument of load/store may be the result of
+          // the alloca instruction (the local variable which could be of
+          // struct type) or the function argument.
+          else if (auto *AI = dyn_cast<AllocaInst>(PointerOp)) {
+            if (auto *AIType = dyn_cast<StructType>(AI->getAllocatedType()))
+              if (FieldUsage.count(AIType->getName().str()) == 1)
+                FieldUsage[AIType->getName().str()][0]++;
+          }
+          // See the explanation above AllocaInst case.
+          else if (auto *A = dyn_cast<Argument>(PointerOp))
+            if (A->hasPointeeInMemoryValueAttr()) {
+              AttributeSet ParamAttrs =
+                  A->getParent()->getAttributes().getParamAttrs(A->getArgNo());
+              AttrBuilder B(A->getParent()->getContext(), ParamAttrs);
+              StructType *FoundST = nullptr;
+
+              if (auto *ST = dyn_cast_or_null<StructType>(B.getByValType()))
+                FoundST = ST;
+              if (auto *ST =
+                      dyn_cast_or_null<StructType>(B.getPreallocatedType()))
+                FoundST = ST;
+              if (auto *ST = dyn_cast_or_null<StructType>(B.getInAllocaType()))
+                FoundST = ST;
+              if (auto *ST = dyn_cast_or_null<StructType>(B.getByRefType()))
+                FoundST = ST;
+              if (auto *ST = dyn_cast_or_null<StructType>(B.getStructRetType()))
+                FoundST = ST;
+
+              if (FoundST)
+                if (FieldUsage.count(FoundST->getName().str()) == 1)
+                  FieldUsage[FoundST->getName().str()][0]++;
+            }
+
+          // errs() << '\n';
         }
         // Go through the usage of struct fields in local struct variables.
         else if (auto *GEP = dyn_cast<GetElementPtrInst>(&I))
           // GEP->dump();
-          if (auto *GEPType =
-                  dyn_cast<StructType>(GEP->getOperand(0)
-                                           ->getType()
-                                           ->getNonOpaquePointerElementType()))
+          if (auto *GEPType = dyn_cast<StructType>(GEP->getSourceElementType()))
             if (FieldUsage.count(GEPType->getName().str()) == 1) {
               // errs() << "In here\n";
               auto *ConstValue = dyn_cast<ConstantInt>(GEP->getOperand(2));
@@ -1008,7 +1099,6 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
       // errs() << *J << '\n';
       Function &Func = *J;
       ++J;
-      // errs() << Func.getName() << '\n';
       if (!Func.isDeclaration()) {
         // if (Cnt == 5) break;
         // auto *OldFuncType = Func.getFunctionType();
@@ -1139,7 +1229,11 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
 
         fixArgumentAttributes(&Func, NewFunc, NewStruct, StructName);
 
+        // NewFunc->setSubprogram(Func.getSubprogram());
+
         // NewFunc->dump();
+
+        // NewFunc->setSubprogram(Func.getSubprogram());
 
         Func.replaceAllUsesWith(NewFunc, IsNewTy);
         Func.eraseFromParent();
@@ -1148,6 +1242,7 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
       }
     }
     errs() << "Out\n";
+    M.dump();
 
     // M.dump();
 
@@ -1160,8 +1255,7 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
       // TODO: Implement support for variables of pointer type which
       // refer structs, on any level of indirection.
       if (isa<GlobalVariable>(Var))
-        if (auto *TempType = dyn_cast<StructType>(
-                Var.getValueType()))
+        if (auto *TempType = dyn_cast<StructType>(Var.getValueType()))
           // Var.dump();
           if (TempType->getName().compare(StructName) == 0) {
             Constant *Initializer;
@@ -1222,7 +1316,21 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
     // Update the old struct type with the new struct type regarding the usage
     // of the local struct variables. Also, update the old struct type with
     // the new struct type in call instructions, where necessary.
-    for (Function &F : M)
+    for (Function &F : M) {
+      // Get the RetainedNodes which refer to DILocalVariable nodes of a
+      // DISubprogram, so that the we can update their types to be
+      // of NewStruct type (assuming their original type was a stuct type).
+      DISubprogram *Subprogram = F.getSubprogram();
+      if (Subprogram) {
+        DIBuilder DB(M, false, Subprogram->getUnit());
+        for (auto *RN : Subprogram->getRetainedNodes())
+          if (auto *LocalVar = dyn_cast<DILocalVariable>(RN)) {
+            errs() << F.getName().str() << " Yes\n";
+            LocalVar->dump();
+            changeDebugInfoForNewStructsLocalVars(
+                M, F, LocalVar, DB, FieldUsage, IsDbgInfoAlreadyUpdated);
+          }
+      }
       for (BasicBlock &BB : F)
         for (Instruction &I : make_early_inc_range(BB))
           if (auto *AllocationInst = dyn_cast<AllocaInst>(&I)) {
@@ -1232,37 +1340,36 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
               // AIST->dump();
               // errs() << '\n';
               if (AIST->getName().str().compare(StructName) == 0) {
-                SmallVector<DbgVariableIntrinsic *> DbgUsers;
-                findDbgUsers(DbgUsers, AllocationInst);
-                // for (const auto &GV : M.getGlobalList())
-                //   GV.dump();
-                // if (auto *Subprogram = dyn_cast<DISubprogram>(
-                //         AllocationInst->getDebugLoc()->getScope())) {
-                DISubprogram *Subprogram = F.getSubprogram();
+                if (Subprogram) {
+                  SmallVector<DbgVariableIntrinsic *> DbgUsers;
+                  findDbgUsers(DbgUsers, AllocationInst);
+                  // for (const auto &GV : M.getGlobalList())
+                  //   GV.dump();
+                  // if (auto *Subprogram = dyn_cast<DISubprogram>(
+                  //         AllocationInst->getDebugLoc()->getScope())) {
+                  // DISubprogram *Subprogram = F.getSubprogram();
 
-                DIBuilder DB(M, false, Subprogram->getUnit());
-                for (auto *DbgUser : DbgUsers)
-                  //   DbgUser->getOperand(1)->dump();
-                  if (auto *LocalVar =
-                          dyn_cast<DILocalVariable>(DbgUser->getVariable()))
-                    if (IsDbgInfoAlreadyUpdated.count(LocalVar->getType()) ==
-                        0) {
-                      bool Updated = createNewCompositeType(DB, M, LocalVar, F.getName().str(),
-                                             FieldUsage, false);
-                      if (Updated)
-                        IsDbgInfoAlreadyUpdated.insert(LocalVar->getType());
-                    }
+                  // DIBuilder DB(M, false, Subprogram->getUnit());
+                  DIBuilder DB(M, false, Subprogram->getUnit());
+                  for (auto *DbgUser : DbgUsers)
+                    //   DbgUser->getOperand(1)->dump();
+                    if (auto *LocalVar =
+                            dyn_cast<DILocalVariable>(DbgUser->getVariable()))
+                      changeDebugInfoForNewStructsLocalVars(
+                          M, F, LocalVar, DB, FieldUsage,
+                          IsDbgInfoAlreadyUpdated);
+                }
 
                 AllocaInst *NewAllocationInst =
                     new AllocaInst(NewStruct, AllocationInst->getAddressSpace(),
                                    AllocationInst->getArraySize(),
                                    DL.getPrefTypeAlign(NewStruct),
                                    AllocationInst->getName(), AllocationInst);
-                // Function getType() returns ptr type (opaque pointer) for both
-                // AllocationInst and NewAllocationInst which means they have the
-                // same type. The difference is that getAllocatedType function
-                // returns the old struct type for AllocationInst and the
-                // NewStruct type for NewAllocationInst.
+                // Function getType() returns ptr type (opaque pointer) for
+                // both AllocationInst and NewAllocationInst which means they
+                // have the same type. The difference is that getAllocatedType
+                // function returns the old struct type for AllocationInst and
+                // the NewStruct type for NewAllocationInst.
                 AllocationInst->replaceAllUsesWith(NewAllocationInst, false);
                 AllocationInst->eraseFromParent();
               }
@@ -1293,8 +1400,10 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
             //   errs() << "Are not same\n";
             Value *Src = MCInst->getSource();
             Value *Dest = MCInst->getDest();
-            bool IsSrcTypeMatch = isGlobVarOrAllocaInstWithSameType(Src, StructName);
-            bool IsDestTypeMatch = isGlobVarOrAllocaInstWithSameType(Dest, StructName);
+            bool IsSrcTypeMatch =
+                isGlobVarOrArgOrAllocaInstWithSameType(Src, StructName);
+            bool IsDestTypeMatch =
+                isGlobVarOrArgOrAllocaInstWithSameType(Dest, StructName);
             if (IsSrcTypeMatch && IsDestTypeMatch) {
               // MCInst->dump();
               DataLayout DL(&M);
@@ -1302,8 +1411,7 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
               uint64_t MaxAlignInBits = 0;
 
               for (auto *SubType : NewStruct->subtypes()) {
-                uint64_t FieldSizeInBits =
-                    DL.getTypeAllocSizeInBits(SubType);
+                uint64_t FieldSizeInBits = DL.getTypeAllocSizeInBits(SubType);
                 if (FieldSizeInBits > MaxAlignInBits)
                   MaxAlignInBits = FieldSizeInBits;
 
@@ -1316,18 +1424,27 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
               }
 
               uint64_t NewSizeInBits = Offset;
-              if (MaxAlignInBits > 0 &&
-                  (NewSizeInBits % MaxAlignInBits != 0))
-                NewSizeInBits =
-                    findFirstLarger(NewSizeInBits, MaxAlignInBits);
+              if (MaxAlignInBits > 0 && (NewSizeInBits % MaxAlignInBits != 0))
+                NewSizeInBits = findFirstLarger(NewSizeInBits, MaxAlignInBits);
 
-              if (auto *OldLength =
-                      dyn_cast<ConstantInt>(MCInst->getLength()))
+              if (auto *OldLength = dyn_cast<ConstantInt>(MCInst->getLength()))
                 MCInst->setLength(Constant::getIntegerValue(
                     MCInst->getLength()->getType(),
                     APInt(OldLength->getBitWidth(), NewSizeInBits / 8)));
             }
           }
+          // Update the DICompositeType nodes which are the types of the
+          // DILocalVariable nodes which feature in the llvm.dbg.declare
+          // intrinsic function' calls.
+          else if (auto *DVI = dyn_cast<DbgVariableIntrinsic>(&I))
+            if (Subprogram) {
+              DIBuilder DB(M, false, Subprogram->getUnit());
+              if (auto *LocalVar =
+                      dyn_cast<DILocalVariable>(DVI->getVariable()))
+                changeDebugInfoForNewStructsLocalVars(
+                    M, F, LocalVar, DB, FieldUsage, IsDbgInfoAlreadyUpdated);
+            }
+    }
 
     InvalidIndexes.clear();
     // M.getContext().pImpl->NamedStructTypes["hello"] = NewStruct;
@@ -1341,6 +1458,9 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
         ->setName(StructName + " ");
     NewStruct->setName(StructName);
   }
+
+  // Go through the module and remove dbg.value calls which refer fields of
+  // the optimized structures here.
 
   // errs() << '\n' << "Globals:\n\n";
 
@@ -1395,6 +1515,7 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
   //           I.dump();
 
   errs() << "Hello from new optimization!\n";
+  // return some PreservedAnalyses, none is probably not okay
   return PreservedAnalyses::none();
 }
 
