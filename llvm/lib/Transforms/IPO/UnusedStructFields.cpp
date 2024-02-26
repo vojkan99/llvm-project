@@ -366,7 +366,7 @@ bool createNewCompositeType(
   // V->dump();
   // CT->dump();
   if (Elements.size() > 0 && StructName.length() > 0) {
-    errs() << StructName << '\n';
+    // errs() << StructName << '\n';
     auto E = FieldUsage.find("struct." + StructName);
     if (E == FieldUsage.end())
       // NOTE: This case can happen if, for example, there are some structs
@@ -397,7 +397,7 @@ bool createNewCompositeType(
           // (dyn_cast<DIDerivedType>(Field))->getOffsetInBits() <<
           // '\n';
           uint64_t AlignInBits = Member->getBaseType()->getSizeInBits();
-          errs() << AlignInBits << "\n\n";
+          // errs() << AlignInBits << "\n\n";
           if (AlignInBits > MaxAlignInBits)
             MaxAlignInBits = AlignInBits;
 
@@ -419,7 +419,7 @@ bool createNewCompositeType(
           Member->setOptimizedOut(false);
 
           Offset += Member->getSizeInBits();
-          errs() << Offset << '\n';
+          // errs() << Offset << '\n';
 
           // NewElements.push_back(NewMemberType);
         } else {
@@ -568,7 +568,7 @@ GetElementPtrInst *createNewGEPInst(GetElementPtrInst *OldGEPInst,
   //   Val->getOperand(0)->dump();
   // NewStruct->dump();
 
-  errs() << '\n';
+  // errs() << '\n';
 
   if (!OldGEPInst->isInBounds())
     return GetElementPtrInst::Create(NewStruct, OldGEPInst->getPointerOperand(),
@@ -940,11 +940,11 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
     FieldUsage[StructName] = Vect;
   }
 
-  errs() << "Module start\n";
+  // errs() << "Module start\n";
 
-  M.dump();
+  // M.dump();
 
-  errs() << "Module end\n";
+  // errs() << "Module end\n";
 
   // Finds all occurences of struct fields usage and records them in the
   // FieldUsage map.
@@ -1033,14 +1033,14 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
   //   // Process DW_OP_LLVM_fragment occurrences...
   // }
 
-  errs() << '\n';
+  // errs() << '\n';
 
-  for (const auto &mapEntry : FieldUsage) {
-    errs() << mapEntry.first << '\n';
-    for (unsigned i = 0; i < mapEntry.second.size(); i++)
-      errs() << i << " : " << mapEntry.second[i] << '\n';
-    errs() << '\n';
-  }
+  // for (const auto &mapEntry : FieldUsage) {
+  //   errs() << mapEntry.first << '\n';
+  //   for (unsigned i = 0; i < mapEntry.second.size(); i++)
+  //     errs() << i << " : " << mapEntry.second[i] << '\n';
+  //   errs() << '\n';
+  // }
 
   // errs() << "Start:\n";
   // for (Function &F : M)
@@ -1203,14 +1203,14 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
             Function::Create(NewFuncType, Func.getLinkage(),
                              Func.getAddressSpace(), FuncName, &M);
 
-        errs() << "Name: " << FuncName << ' ' << '\n';
+        // errs() << "Name: " << FuncName << ' ' << '\n';
         ValueToValueMapTy VMap;
         // Loop over the arguments, copying the names of the mapped arguments
         // over.
         Function::arg_iterator DestA = NewFunc->arg_begin();
         // errs() << Func.arg_end() - Func.arg_begin() + 1 << '\n';
         for (const Argument &A : Func.args()) {
-          A.dump();
+          // A.dump();
           if (VMap.count(&A) == 0) { // Is this argument preserved?
             // errs() << A.getName().str() << '\n';
             DestA->setName(A.getName()); // Copy the name over.
@@ -1241,8 +1241,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
         fixCallBasesIfNecessary(NewFunc, StructName);
       }
     }
-    errs() << "Out\n";
-    M.dump();
+    // errs() << "Out\n";
+    // M.dump();
 
     // M.dump();
 
@@ -1325,8 +1325,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
         DIBuilder DB(M, false, Subprogram->getUnit());
         for (auto *RN : Subprogram->getRetainedNodes())
           if (auto *LocalVar = dyn_cast<DILocalVariable>(RN)) {
-            errs() << F.getName().str() << " Yes\n";
-            LocalVar->dump();
+            // errs() << F.getName().str() << " Yes\n";
+            // LocalVar->dump();
             changeDebugInfoForNewStructsLocalVars(
                 M, F, LocalVar, DB, FieldUsage, IsDbgInfoAlreadyUpdated);
           }
@@ -1483,22 +1483,22 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
 
   AllStructs = M.getIdentifiedStructTypes();
 
-  errs() << "Struct types:\n\n";
+  // errs() << "Struct types:\n\n";
 
-  for (StructType *ST : AllStructs)
-    ST->dump();
+  // for (StructType *ST : AllStructs)
+  //   ST->dump();
 
-  errs() << '\n';
+  // errs() << '\n';
 
   // errs() << "Module metadata:\n";
 
   changeDebugInfoForNewStructs(M, FieldUsage, IsDbgInfoAlreadyUpdated);
 
-  errs() << "Module start\n";
+  // errs() << "Module start\n";
 
-  M.dump();
+  // M.dump();
 
-  errs() << "Module end\n";
+  // errs() << "Module end\n";
 
   // errs() << "\nConstant table:\n";
 
@@ -1514,7 +1514,7 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
   //         if (isa<LoadInst>(I) || isa<StoreInst>(I))
   //           I.dump();
 
-  errs() << "Hello from new optimization!\n";
+  // errs() << "Hello from new optimization!\n";
   // return some PreservedAnalyses, none is probably not okay
   return PreservedAnalyses::none();
 }

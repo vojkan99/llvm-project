@@ -641,10 +641,10 @@ public:
                   if (Indices[j] == 0)
                     NumOfInvalidIndices++;
 
-                errs() << "Old Index: " << NewIndex->getZExtValue() << '\n'
-                       << "New Index: "
-                       << NewIndex->getZExtValue() - NumOfInvalidIndices
-                       << '\n';
+                // errs() << "Old Index: " << NewIndex->getZExtValue() << '\n'
+                //        << "New Index: "
+                //        << NewIndex->getZExtValue() - NumOfInvalidIndices
+                //        << '\n';
                 // New index is the result of a subtraction between the old
                 // index and NumOfInvalidIndices. That is the number of the
                 // unused fields with indexes between 0 and old index in the old
