@@ -74,7 +74,8 @@ void changeSourceElementTypeForGEPCEs(Module &M, std::string StructName,
             if (auto *GEPCE = dyn_cast<GetElementPtrConstantExpr>(&*O))
               if (auto *GEPCEType =
                       dyn_cast<StructType>(GEPCE->getSourceElementType()))
-                if (GEPCEType->getName().str().compare(StructName) == 0) {
+                if (!GEPCEType->isLiteral() &&
+                     GEPCEType->getName().str().compare(StructName) == 0) {
                   // errs() <<
                   // M.getContext().pImpl->ExprConstants.getMap().count(
                   //               GEPCE)
@@ -130,7 +131,8 @@ std::string getGVTypeName(Module &M, StringRef GVName) {
         // GV.dump();
         // errs() << "Type " << ST->getName().str() << '\n';
         // errs() << "Struct name: " << ST->getName().str() << '\n';
-        if (ST->getName().str().substr(0, 7).compare("struct.") == 0)
+        if (!ST->isLiteral() &&
+             ST->getName().str().substr(0, 7).compare("struct.") == 0)
           return ST->getName().str().substr(7);
       }
   return "";
@@ -594,7 +596,8 @@ void filterStructsWithPointerVars(
             // a pointer. Therefore, this struct should not be optimized.
             if (auto *GEPType =
                     dyn_cast<StructType>(GEPInst->getSourceElementType()))
-              if (FieldUsage.count(GEPType->getName().str()) == 1)
+              if (!GEPType->isLiteral() &&
+                   FieldUsage.count(GEPType->getName().str()) == 1)
                 FieldUsage.erase(GEPType->getName().str());
 }
 
@@ -622,7 +625,8 @@ void filterStructsAsFunctionParameters(
       // errs() << F.getName() << '\n';
       for (auto &A : F.args())
         if (auto *T = dyn_cast<StructType>(A.getType()))
-          if (FieldUsage.count(T->getName().str()) == 1)
+          if (!T->isLiteral() &&
+               FieldUsage.count(T->getName().str()) == 1)
             FieldUsage.erase(T->getName().str());
 
       // for (auto &U : F.uses()) {
@@ -791,27 +795,32 @@ void fixArgumentAttributes(Function *OldFunc, Function *NewFunc,
       //   //     A.getContext(), AttributeSet::get(A.getContext(), B));
       // }
       if (auto *OldST = dyn_cast_or_null<StructType>(B.getByValType()))
-        if (OldST->getName().compare(StructName) == 0) {
+        if (!OldST->isLiteral() &&
+             OldST->getName().compare(StructName) == 0) {
           B.addByValAttr(NewStruct);
           AttrChange = true;
         }
       if (auto *OldST = dyn_cast_or_null<StructType>(B.getPreallocatedType()))
-        if (OldST->getName().compare(StructName) == 0) {
+        if (!OldST->isLiteral() &&
+             OldST->getName().compare(StructName) == 0) {
           B.addPreallocatedAttr(NewStruct);
           AttrChange = true;
         }
       if (auto *OldST = dyn_cast_or_null<StructType>(B.getInAllocaType()))
-        if (OldST->getName().compare(StructName) == 0) {
+        if (!OldST->isLiteral() &&
+             OldST->getName().compare(StructName) == 0) {
           B.addInAllocaAttr(NewStruct);
           AttrChange = true;
         }
       if (auto *OldST = dyn_cast_or_null<StructType>(B.getByRefType()))
-        if (OldST->getName().compare(StructName) == 0) {
+        if (!OldST->isLiteral() &&
+             OldST->getName().compare(StructName) == 0) {
           B.addByRefAttr(NewStruct);
           AttrChange = true;
         }
       if (auto *OldST = dyn_cast_or_null<StructType>(B.getStructRetType()))
-        if (OldST->getName().compare(StructName) == 0) {
+        if (!OldST->isLiteral() &&
+             OldST->getName().compare(StructName) == 0) {
           B.addStructRetAttr(NewStruct);
           AttrChange = true;
         }
@@ -848,28 +857,33 @@ void fixCallBasesIfNecessary(Function *F, std::string StructName) {
           AttrBuilder B(F->getContext(), ParamAttrs);
 
           if (auto *OldST = dyn_cast_or_null<StructType>(B.getByValType()))
-            if (OldST->getName().compare(StructName) == 0) {
+            if (!OldST->isLiteral() &&
+                 OldST->getName().compare(StructName) == 0) {
               B.addByValAttr(F->getParamByValType(ArgNo));
               AttrChange = true;
             }
           if (auto *OldST =
                   dyn_cast_or_null<StructType>(B.getPreallocatedType()))
-            if (OldST->getName().compare(StructName) == 0) {
+            if (!OldST->isLiteral() &&
+                 OldST->getName().compare(StructName) == 0) {
               B.addPreallocatedAttr(F->getParamPreallocatedType(ArgNo));
               AttrChange = true;
             }
           if (auto *OldST = dyn_cast_or_null<StructType>(B.getInAllocaType()))
-            if (OldST->getName().compare(StructName) == 0) {
+            if (!OldST->isLiteral() &&
+                 OldST->getName().compare(StructName) == 0) {
               B.addInAllocaAttr(F->getParamInAllocaType(ArgNo));
               AttrChange = true;
             }
           if (auto *OldST = dyn_cast_or_null<StructType>(B.getByRefType()))
-            if (OldST->getName().compare(StructName) == 0) {
+            if (!OldST->isLiteral() &&
+                 OldST->getName().compare(StructName) == 0) {
               B.addByRefAttr(F->getParamByRefType(ArgNo));
               AttrChange = true;
             }
           if (auto *OldST = dyn_cast_or_null<StructType>(B.getStructRetType()))
-            if (OldST->getName().compare(StructName) == 0) {
+            if (!OldST->isLiteral() &&
+                 OldST->getName().compare(StructName) == 0) {
               B.addStructRetAttr(F->getParamStructRetType(ArgNo));
               AttrChange = true;
             }
@@ -890,35 +904,43 @@ void fixCallBasesIfNecessary(Function *F, std::string StructName) {
     }
 }
 
-// Returns true if V is either a GlobalVariable or an AllocaInst and
-// its pointee type has the name StructName + "_1", otherwise false.
+// Returns true if V is either a GlobalVariable or an Argument or an
+// AllocaInst and its pointee type has the name StructName + "_1", otherwise
+// false.
 bool isGlobVarOrArgOrAllocaInstWithSameType(Value *V, std::string StructName) {
   if (auto *GV = dyn_cast<GlobalVariable>(V)) {
     if (auto *ST = dyn_cast<StructType>(GV->getValueType()))
-      if (ST->getName().str().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().str().compare(StructName + "_1") == 0)
         return true;
   } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
     if (auto *ST = dyn_cast<StructType>(AI->getAllocatedType()))
-      if (ST->getName().str().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().str().compare(StructName + "_1") == 0)
         return true;
   } else if (auto *A = dyn_cast<Argument>(V)) {
     AttributeSet ParamAttrs =
         A->getParent()->getAttributes().getParamAttrs(A->getArgNo());
     AttrBuilder B(A->getParent()->getContext(), ParamAttrs);
     if (auto *ST = dyn_cast_or_null<StructType>(B.getByValType()))
-      if (ST->getName().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().compare(StructName + "_1") == 0)
         return true;
     if (auto *ST = dyn_cast_or_null<StructType>(B.getPreallocatedType()))
-      if (ST->getName().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().compare(StructName + "_1") == 0)
         return true;
     if (auto *ST = dyn_cast_or_null<StructType>(B.getInAllocaType()))
-      if (ST->getName().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().compare(StructName + "_1") == 0)
         return true;
     if (auto *ST = dyn_cast_or_null<StructType>(B.getByRefType()))
-      if (ST->getName().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().compare(StructName + "_1") == 0)
         return true;
     if (auto *ST = dyn_cast_or_null<StructType>(B.getStructRetType()))
-      if (ST->getName().compare(StructName + "_1") == 0)
+      if (!ST->isLiteral() &&
+           ST->getName().compare(StructName + "_1") == 0)
         return true;
   }
 
@@ -935,6 +957,10 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
 
   for (StructType *ST : AllStructs) {
     // ST->dump();
+    // Literal struct types do not have names, so they cannot be identified.
+    // Therefore, we are not taking them into account in this analysis.
+    if (ST->isLiteral())
+      continue;
     std::string StructName = ST->getName().str();
     std::vector<unsigned> Vect(ST->elements().size(), 0);
     FieldUsage[StructName] = Vect;
@@ -964,7 +990,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
 
             if (auto *GEPType =
                     dyn_cast<StructType>(GEPCE->getSourceElementType()))
-              if (FieldUsage.count(GEPType->getName().str()) == 1) {
+              if (!GEPType->isLiteral() &&
+                   FieldUsage.count(GEPType->getName().str()) == 1) {
                 auto *ConstValue = dyn_cast<ConstantInt>(GEPCE->getOperand(2));
                 FieldUsage[GEPType->getName().str()]
                           [ConstValue->getZExtValue()]++;
@@ -977,7 +1004,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
           // GetElementPtrConstantExpr would.
           else if (auto *GV = dyn_cast<GlobalVariable>(PointerOp)) {
             if (auto *GVType = dyn_cast<StructType>(GV->getValueType()))
-              if (FieldUsage.count(GVType->getName().str()) == 1)
+              if (!GVType->isLiteral() &&
+                   FieldUsage.count(GVType->getName().str()) == 1)
                 FieldUsage[GVType->getName().str()][0]++;
           }
           // Go through the usage of the first struct field (index 0) in
@@ -988,7 +1016,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
           // struct type) or the function argument.
           else if (auto *AI = dyn_cast<AllocaInst>(PointerOp)) {
             if (auto *AIType = dyn_cast<StructType>(AI->getAllocatedType()))
-              if (FieldUsage.count(AIType->getName().str()) == 1)
+              if (!AIType->isLiteral() &&
+                   FieldUsage.count(AIType->getName().str()) == 1)
                 FieldUsage[AIType->getName().str()][0]++;
           }
           // See the explanation above AllocaInst case.
@@ -1012,7 +1041,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
                 FoundST = ST;
 
               if (FoundST)
-                if (FieldUsage.count(FoundST->getName().str()) == 1)
+                if (!FoundST->isLiteral() &&
+                     FieldUsage.count(FoundST->getName().str()) == 1)
                   FieldUsage[FoundST->getName().str()][0]++;
             }
 
@@ -1022,7 +1052,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
         else if (auto *GEP = dyn_cast<GetElementPtrInst>(&I))
           // GEP->dump();
           if (auto *GEPType = dyn_cast<StructType>(GEP->getSourceElementType()))
-            if (FieldUsage.count(GEPType->getName().str()) == 1) {
+            if (!GEPType->isLiteral() &&
+                 FieldUsage.count(GEPType->getName().str()) == 1) {
               // errs() << "In here\n";
               auto *ConstValue = dyn_cast<ConstantInt>(GEP->getOperand(2));
               FieldUsage[GEPType->getName().str()]
@@ -1151,7 +1182,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
         // is NewStruct.
         Type *NewFuncReturnType = OldFuncType->getReturnType();
         if (auto *OldST = dyn_cast<StructType>(OldFuncType->getReturnType()))
-          if (OldST->getName().compare(StructName) == 0) {
+          if (!OldST->isLiteral() &&
+               OldST->getName().compare(StructName) == 0) {
             IsNewTy = true;
             NewFuncReturnType = NewStruct;
           }
@@ -1186,11 +1218,14 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
         // to occur in the code.
         for (const Argument &A : Func.args())
           if (auto *OldST = dyn_cast<StructType>(A.getType())) {
-            if (OldST->getName().compare(StructName) == 0) {
+            if (!OldST->isLiteral() &&
+                 OldST->getName().compare(StructName) == 0) {
               ArgTypes.push_back(NewStruct);
               IsNewTy = true;
               continue;
             }
+            else
+              ArgTypes.push_back(A.getType());
           } else
             ArgTypes.push_back(A.getType());
 
@@ -1257,7 +1292,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
       if (isa<GlobalVariable>(Var))
         if (auto *TempType = dyn_cast<StructType>(Var.getValueType()))
           // Var.dump();
-          if (TempType->getName().compare(StructName) == 0) {
+          if (!TempType->isLiteral() &&
+               TempType->getName().compare(StructName) == 0) {
             Constant *Initializer;
             if (!Var.hasInitializer())
               Initializer = nullptr;
@@ -1319,7 +1355,7 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
     for (Function &F : M) {
       // Get the RetainedNodes which refer to DILocalVariable nodes of a
       // DISubprogram, so that the we can update their types to be
-      // of NewStruct type (assuming their original type was a stuct type).
+      // of NewStruct type (assuming their original type was a struct type).
       DISubprogram *Subprogram = F.getSubprogram();
       if (Subprogram) {
         DIBuilder DB(M, false, Subprogram->getUnit());
@@ -1339,7 +1375,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
                     dyn_cast<StructType>(AllocationInst->getAllocatedType()))
               // AIST->dump();
               // errs() << '\n';
-              if (AIST->getName().str().compare(StructName) == 0) {
+              if (!AIST->isLiteral() &&
+                   AIST->getName().str().compare(StructName) == 0) {
                 if (Subprogram) {
                   SmallVector<DbgVariableIntrinsic *> DbgUsers;
                   findDbgUsers(DbgUsers, AllocationInst);
@@ -1378,7 +1415,8 @@ UnusedStructureFieldsEliminationPass::run(Module &M, ModuleAnalysisManager &) {
             // GEPInst->getOperand(0)->dump();
             if (auto *GEPType =
                     dyn_cast<StructType>(GEPInst->getSourceElementType()))
-              if (GEPType->getName().str().compare(StructName) == 0) {
+              if (!GEPType->isLiteral() &&
+                   GEPType->getName().str().compare(StructName) == 0) {
                 // GEPInst->dump();
                 GetElementPtrInst *NewGEPInst = createNewGEPInst(
                     GEPInst, FieldUsage[StructName], NewStruct);
